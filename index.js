@@ -1,55 +1,72 @@
 const express = require("express");
+const dotenv = require("dotenv");
 const axios = require("axios");
 const app = express();
 
-require("dotenv").config();
+dotenv.config();
 
-const port = process.env.PORT || 10000;
+const PORT = process.env.PORT || 10000;
 
-// ✅ LOGIN ROUTE — Sends user to Airtable for login
+app.get("/", (req, res) => {
+  res.send("✅ Airtable OAuth server is running.");
+});
+
+// Step 1: Login – Redirect user to Airtable authorization page
 app.get("/login", (req, res) => {
-  const authUrl = `https://airtable.com/oauth2/v1/authorize?client_id=${process.env.CLIENT_ID}&redirect_uri=${process.env.REDIRECT_URI}&response_type=code&scope=data.records:read`;
+  const clientId = process.env.CLIENT_ID;
+  const redirectUri = process.env.REDIRECT_URI;
+  const scope = "data.records:read";
 
-  console.log("🔍 CLIENT_ID:", process.env.CLIENT_ID);
-  console.log("🔍 REDIRECT_URI:", process.env.REDIRECT_URI);
+  const authUrl = `https://airtable.com/oauth2/v1/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=${scope}`;
+
+  console.log("🔍 CLIENT_ID:", clientId);
+  console.log("🔍 REDIRECT_URI:", redirectUri);
   console.log("🔗 OAuth URL:", authUrl);
 
   res.redirect(authUrl);
 });
 
-// ✅ CALLBACK ROUTE — Airtable sends user here after login
+// Step 2: Callback – Handle redirect and exchange code for token
 app.get("/callback", async (req, res) => {
   const code = req.query.code;
 
+  if (!code) {
+    return res.status(400).send("⚠️ Authorization code missing in callback.");
+  }
+
   try {
-    const tokenResponse = await axios.post("https://airtable.com/oauth2/v1/token", null, {
-      params: {
+    const tokenResponse = await axios.post(
+      "https://airtable.com/oauth2/v1/token",
+      new URLSearchParams({
+        code,
         grant_type: "authorization_code",
-        code: code,
-        client_id: process.env.CLIENT_ID,
-        client_secret: process.env.CLIENT_SECRET,
-        redirect_uri: process.env.REDIRECT_URI,
-      },
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-    });
+        redirect_uri: process.env.REDIRECT_URI
+      }),
+      {
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Authorization:
+            "Basic " +
+            Buffer.from(
+              process.env.CLIENT_ID + ":" + process.env.CLIENT_SECRET
+            ).toString("base64")
+        }
+      }
+    );
 
-    const accessToken = tokenResponse.data.access_token;
-    console.log("✅ Access token received:", accessToken);
+    console.log("✅ Access Token Response:", tokenResponse.data);
 
-    res.send(`✅ Access token received: ${accessToken}`);
+    // For demo: display access token in browser (you'll store this securely in real apps)
+    res.send(`
+      <h2>🎉 OAuth Success</h2>
+      <pre>${JSON.stringify(tokenResponse.data, null, 2)}</pre>
+    `);
   } catch (error) {
     console.error("❌ Token exchange error:", error.response?.data || error.message);
-    res.status(500).send(`❌ Token exchange error: ${JSON.stringify(error.response?.data || error.message)}`);
+    res.status(500).send("❌ Token exchange failed: " + JSON.stringify(error.response?.data));
   }
 });
 
-// ✅ ROOT
-app.get("/", (req, res) => {
-  res.send("🌐 OAuth server is running");
-});
-
-app.listen(port, () => {
-  console.log(`🚀 Server is running on port ${port}`);
+app.listen(PORT, () => {
+  console.log(`🚀 OAuth server running on port ${PORT}`);
 });
