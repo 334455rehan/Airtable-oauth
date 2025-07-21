@@ -1,40 +1,51 @@
-
 const express = require("express");
 const axios = require("axios");
-const app = express();
 require("dotenv").config();
 
+const app = express();
+const port = process.env.PORT || 3000;
+
+// Home route for testing
 app.get("/", (req, res) => {
-  res.send("✅ OAuth Server is Running");
+  res.send("✅ Airtable OAuth Server is running.");
 });
 
+// Login route - redirects to Airtable OAuth
+app.get("/login", (req, res) => {
+  const authUrl = `https://airtable.com/oauth2/v1/authorize?client_id=${process.env.CLIENT_ID}&redirect_uri=${process.env.REDIRECT_URI}&response_type=code&scope=data.records:read`;
+  res.redirect(authUrl);
+});
+
+// Callback route - handles Airtable redirect
 app.get("/callback", async (req, res) => {
-  const { code } = req.query;
-  if (!code) return res.send("❌ No code provided");
+  const code = req.query.code;
 
   try {
-    const response = await axios.post("https://airtable.com/oauth2/token", null, {
-      params: {
+    const tokenResponse = await axios.post(
+      "https://airtable.com/oauth2/v1/token",
+      new URLSearchParams({
         grant_type: "authorization_code",
-        code: code,
+        code,
         client_id: process.env.CLIENT_ID,
         client_secret: process.env.CLIENT_SECRET,
         redirect_uri: process.env.REDIRECT_URI,
-      },
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded"
+      }).toString(),
+      {
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
       }
-    });
+    );
 
-    const { access_token } = response.data;
-    res.send(`✅ Access Token: ${access_token}`);
+    const accessToken = tokenResponse.data.access_token;
+    res.send(`✅ Access token received: ${accessToken}`);
   } catch (error) {
-    console.error(error.response?.data || error);
-    res.send("❌ Token exchange failed.");
+    console.error("Token exchange error:", error.response?.data || error.message);
+    res.status(500).send("❌ Failed to exchange code for token.");
   }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log("🌐 Server running on port", PORT);
+// Start the server
+app.listen(port, () => {
+  console.log(`OAuth server running on port ${port}`);
 });
